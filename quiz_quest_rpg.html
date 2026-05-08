@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quiz Quest RPG - 100 Questions Edition</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=DotGothic16&display=swap');
+        body {
+            font-family: 'DotGothic16', sans-serif;
+            background-color: #1a1a1a;
+            color: #fff;
+            overflow: hidden;
+            touch-action: manipulation;
+        }
+        .pixel-border {
+            border: 4px solid #fff;
+            image-rendering: pixelated;
+        }
+        .hp-bar-inner {
+            transition: width 0.3s ease-out;
+        }
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-10px); }
+            75% { transform: translateX(10px); }
+        }
+        .animate-shake {
+            animation: shake 0.2s ease-in-out 2;
+        }
+        @keyframes float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+        .animate-float {
+            animation: float 3s ease-in-out infinite;
+        }
+        .screen-flash {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 50;
+            opacity: 0;
+        }
+        .damage-red { background-color: rgba(255, 0, 0, 0.4); animation: flash 0.3s ease-out; }
+        .heal-green { background-color: rgba(0, 255, 0, 0.4); animation: flash 0.3s ease-out; }
+        @keyframes flash {
+            0% { opacity: 1; }
+            100% { opacity: 0; }
+        }
+        .btn-pixel {
+            position: relative;
+            background: #444;
+            box-shadow: 0 4px 0 #222;
+            transition: all 0.1s;
+        }
+        .btn-pixel:active {
+            transform: translateY(4px);
+            box-shadow: 0 0 0 #222;
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center min-h-screen p-4">
+    <div id="flash-overlay" class="screen-flash"></div>
+    <div id="game-container" class="w-full max-w-md bg-zinc-900 pixel-border p-4 relative flex flex-col gap-4">
+        
+        <!-- UI Header -->
+        <div class="flex justify-between items-center border-b-2 border-zinc-700 pb-2 text-sm">
+            <div>Lv. <span id="player-lv">1</span> <span id="player-name">勇者</span></div>
+            <div>Stage: <span id="current-stage">1</span></div>
+        </div>
+        <!-- Battle Screen -->
+        <div class="relative bg-zinc-800 h-48 rounded flex items-center justify-center overflow-hidden border-2 border-zinc-700">
+            <div class="absolute inset-0 opacity-20 pointer-events-none flex flex-wrap gap-4 p-2">
+                <div class="w-8 h-8 bg-zinc-600 rounded-full"></div>
+                <div class="w-8 h-8 bg-zinc-600 rounded-full self-end"></div>
+            </div>
+            <!-- Enemy Area -->
+            <div id="enemy-container" class="flex flex-col items-center z-10">
+                <div id="enemy-sprite" class="text-6xl mb-2 animate-float">👾</div>
+                <div class="w-32 h-3 bg-gray-700 rounded-full overflow-hidden border border-white">
+                    <div id="enemy-hp-bar" class="hp-bar-inner h-full bg-red-500" style="width: 100%;"></div>
+                </div>
+                <div id="enemy-name" class="text-xs mt-1">スライム</div>
+            </div>
+        </div>
+        <!-- Player Status -->
+        <div class="grid grid-cols-2 gap-4">
+            <div class="flex flex-col">
+                <span class="text-xs mb-1">HP: <span id="player-hp-text">100/100</span></span>
+                <div class="w-full h-4 bg-gray-700 rounded-full overflow-hidden border border-white">
+                    <div id="player-hp-bar" class="hp-bar-inner h-full bg-green-500" style="width: 100%;"></div>
+                </div>
+            </div>
+            <div class="flex flex-col">
+                <span class="text-xs mb-1">EXP: <span id="player-exp-text">0/10</span></span>
+                <div class="w-full h-4 bg-gray-700 rounded-full overflow-hidden border border-white">
+                    <div id="player-exp-bar" class="hp-bar-inner h-full bg-blue-500" style="width: 0%;"></div>
+                </div>
+            </div>
+        </div>
+        <!-- Message Area -->
+        <div id="message-box" class="bg-black p-3 h-20 text-sm border-2 border-zinc-600 overflow-y-auto">
+            モンスターがあらわれた！
+        </div>
+        <!-- Question Area -->
+        <div id="quiz-area" class="flex flex-col gap-3">
+            <div id="question-text" class="bg-zinc-800 p-3 min-h-[80px] flex items-center justify-center text-center border-2 border-zinc-700 rounded whitespace-pre-wrap">
+                問題がここに表示されます。
+            </div>
+            <div id="options-grid" class="grid grid-cols-2 gap-2">
+                <button onclick="handleAnswer(0)" class="btn-pixel p-3 text-sm rounded">選択肢1</button>
+                <button onclick="handleAnswer(1)" class="btn-pixel p-3 text-sm rounded">選択肢2</button>
+                <button onclick="handleAnswer(2)" class="btn-pixel p-3 text-sm rounded">選択肢3</button>
+                <button onclick="handleAnswer(3)" class="btn-pixel p-3 text-sm rounded">選択肢4</button>
+            </div>
+        </div>
+        <!-- Game Over/Win Modal -->
+        <div id="overlay" class="absolute inset-0 bg-black/80 z-40 hidden flex-col items-center justify-center p-6 text-center">
+            <h2 id="overlay-title" class="text-3xl mb-4">GAME OVER</h2>
+            <p id="overlay-desc" class="mb-6">冒険は終わってしまった...</p>
+            <button onclick="resetGame()" class="btn-pixel bg-blue-600 px-8 py-3 rounded">最初から遊ぶ</button>
+        </div>
+    </div>
+    <script>
+        // --- Game Data (Total 100 Questions) ---
+        const QUIZ_DATABASE = [
+            // 元の50問
+            { q: "太陽系で一番大きい惑星は？", a: ["木星", "土星", "火星", "地球"], correct: 0, attr: "fire" },
+            { q: "「吾輩は猫である」の著者は？", a: ["夏目漱石", "芥川龍之介", "太宰治", "森鴎外"], correct: 0, attr: "grass" },
+            { q: "水の化学式は？", a: ["CO2", "H2O", "O2", "NaCl"], correct: 1, attr: "water" },
+            { q: "日本で二番目に高い山は？", a: ["富士山", "北岳", "槍ヶ岳", "阿蘇山"], correct: 1, attr: "grass" },
+            { q: "1分間は何秒？", a: ["30秒", "60秒", "100秒", "120秒"], correct: 1, attr: "fire" },
+            { q: "三角形の内角の和は？", a: ["90度", "180度", "270度", "360度"], correct: 1, attr: "water" },
+            { q: "英語で『りんご』は何？", a: ["Orange", "Banana", "Apple", "Grape"], correct: 2, attr: "fire" },
+            { q: "世界で一番広い国は？", a: ["アメリカ", "中国", "カナダ", "ロシア"], correct: 3, attr: "water" },
+            { q: "徳川家康が開いた幕府は？", a: ["鎌倉幕府", "室町幕府", "江戸幕府", "明治政府"], correct: 2, attr: "grass" },
+            { q: "五円玉に描かれている植物は？", a: ["桜", "稲", "松", "竹"], correct: 1, attr: "grass" },
+            { q: "光の三原色ではないものは？", a: ["赤", "緑", "青", "黄"], correct: 3, attr: "fire" },
+            { q: "「パンダ」の主食は何？", a: ["笹", "果物", "昆虫", "魚"], correct: 0, attr: "grass" },
+            { q: "世界で一番長い川は？", a: ["アマゾン川", "ナイル川", "信濃川", "ミシシッピ川"], correct: 1, attr: "water" },
+            { q: "トランプの総数はジョーカーを除いて何枚？", a: ["50枚", "52枚", "54枚", "48枚"], correct: 1, attr: "water" },
+            { q: "「1000」のローマ数字表記は？", a: ["C", "D", "M", "L"], correct: 2, attr: "fire" },
+            { q: "ダイヤモンドの正体は何という元素？", a: ["窒素", "酸素", "水素", "炭素"], correct: 3, attr: "fire" },
+            { q: "「将棋」で斜め後ろに動ける駒は？", a: ["飛車", "桂馬", "銀将", "金将"], correct: 2, attr: "grass" },
+            { q: "オリンピックの五輪マークの青はどの大陸？", a: ["アジア", "ヨーロッパ", "アフリカ", "アメリカ"], correct: 1, attr: "water" },
+            { q: "日本で最も多い名字は？", a: ["田中", "鈴木", "佐藤", "高橋"], correct: 2, attr: "grass" },
+            { q: "「ハチ公」の犬種は何？", a: ["秋田犬", "柴犬", "土佐犬", "紀州犬"], correct: 0, attr: "grass" },
+            { q: "日本で最も北にある都道府県は？", a: ["青森県", "北海道", "秋田県", "岩手県"], correct: 1, attr: "water" },
+            { q: "「一石二鳥」の「鳥」は何羽？", a: ["1羽", "2羽", "3羽", "4羽"], correct: 1, attr: "grass" },
+            { q: "100円ショップの「ダイソー」の創業地は？", a: ["東京都", "大阪府", "広島県", "愛知県"], correct: 2, attr: "fire" },
+            { q: "テニスの試合で、0点のことを何と呼ぶ？", a: ["ゼロ", "ナッシング", "ラブ", "ヌル"], correct: 2, attr: "water" },
+            { q: "人間の骨の数は大人でおよそ何個？", a: ["100個", "200個", "300個", "400個"], correct: 1, attr: "fire" },
+            { q: "世界で初めて電球を実用化したのは？", a: ["ニュートン", "アインシュタイン", "エジソン", "ベル"], correct: 2, attr: "fire" },
+            { q: "寿司の「ガリ」は何を漬けたもの？", a: ["大根", "生姜", "きゅうり", "みょうが"], correct: 1, attr: "grass" },
+            { q: "「百聞は一見にしかず」の続きとして正しいのは？", a: ["一見は一考にしかず", "一考は一行にしかず", "一考は一得にしかず", "一行は一考にしかず"], correct: 0, attr: "grass" },
+            { q: "サッカーのワールドカップ、第1回大会の開催国は？", a: ["ブラジル", "イタリア", "ウルグアイ", "フランス"], correct: 2, attr: "water" },
+            { q: "太陽の光が地球に届くまでにかかる時間は？", a: ["約8秒", "約8分", "約8時間", "約8日"], correct: 1, attr: "fire" },
+            { q: "「急がば回れ」の由来となったのはどこの湖？", a: ["琵琶湖", "浜名湖", "中禅寺湖", "河口湖"], correct: 0, attr: "water" },
+            { q: "「いろはにほへと」の「いろは」は全部で何文字？", a: ["45文字", "46文字", "47文字", "48文字"], correct: 2, attr: "grass" },
+            { q: "ピアノの鍵盤の数は全部でいくつ？", a: ["84鍵", "86鍵", "88鍵", "90鍵"], correct: 2, attr: "fire" },
+            { q: "フランスの首都は？", a: ["ロンドン", "ベルリン", "パリ", "ローマ"], correct: 2, attr: "water" },
+            { q: "「納豆」は何を菌で発酵させたもの？", a: ["小豆", "大豆", "黒豆", "枝豆"], correct: 1, attr: "grass" },
+            { q: "一番足が速い陸上動物は？", a: ["ライオン", "チーター", "ダチョウ", "馬"], correct: 1, attr: "grass" },
+            { q: "「豆腐」の原料は何？", a: ["大豆", "小麦", "米", "とうもろこし"], correct: 0, attr: "grass" },
+            { q: "世界三大珍味ではないものは？", a: ["フォアグラ", "キャビア", "トリュフ", "アワビ"], correct: 3, attr: "water" },
+            { q: "日本の通貨単位「円」を英語で書くと？", a: ["En", "Yen", "In", "On"], correct: 1, attr: "fire" },
+            { q: "「かぐや姫」が見つかったのは何の中？", a: ["桃", "竹", "川", "山"], correct: 1, attr: "grass" },
+            { q: "「ことわざ」で、猫に小判、豚に何？", a: ["ダイヤモンド", "真珠", "金杯", "お札"], correct: 1, attr: "water" },
+            { q: "野球で、満塁ホームランのことを何という？", a: ["トリプルプレー", "グランドスラム", "スリーラン", "サイクル安打"], correct: 1, attr: "fire" },
+            { q: "正解を選べ：野球で「ハットトリック」に相当するのは？", a: ["3打席連続安打", "3本塁打", "3三振", "本来はサッカー用語"], correct: 3, attr: "grass" },
+            { q: "「元素記号」で『Au』は何を表す？", a: ["銀", "銅", "金", "鉄"], correct: 2, attr: "fire" },
+            { q: "ひらがなの「の」の画数は？", a: ["1画", "2画", "3画", "4画"], correct: 0, attr: "grass" },
+            { q: "「ペンギン」は北極と南極、どちらに住んでいる？", a: ["北極", "南極", "両方", "どちらにもいない"], correct: 1, attr: "water" },
+            { q: "「SOS」は何の略？", a: ["Save Our Souls", "Save Our Ship", "意味はない", "Send Out Signals"], correct: 2, attr: "water" },
+            { q: "地球の表面の約何％が海？", a: ["約50％", "約60％", "約70％", "約80％"], correct: 2, attr: "water" },
+            { q: "将棋の駒で、成ることができないのは？", a: ["歩", "香車", "金将", "桂馬"], correct: 2, attr: "grass" },
+            // 追加50問 (Total 100)
+            { q: "「雪崩」の正しい読み方は？", a: ["あられ", "なだれ", "しぐれ", "みぞれ"], correct: 1, attr: "water" },
+            { q: "カエルの子は？", a: ["おたまじゃくし", "ぼうふら", "やご", "いもむし"], correct: 0, attr: "water" },
+            { q: "「千と千尋の神隠し」の主人公の本名は？", a: ["荻野千尋", "佐々木千尋", "田中千尋", "渡辺千尋"], correct: 0, attr: "grass" },
+            { q: "1ダースは何個？", a: ["10個", "12個", "14個", "16個"], correct: 1, attr: "fire" },
+            { q: "日本の初代内閣総理大臣は？", a: ["伊藤博文", "板垣退助", "大隈重信", "福沢諭吉"], correct: 0, attr: "grass" },
+            { q: "「おにぎり」の別名は？", a: ["おむすび", "おだんご", "おはぎ", "おもち"], correct: 0, attr: "grass" },
+            { q: "「救急車」を呼ぶ番号は？", a: ["110", "117", "118", "119"], correct: 3, attr: "fire" },
+            { q: "「時」の単位。1時間は何分？", a: ["50分", "60分", "100分", "120分"], correct: 1, attr: "fire" },
+            { q: "一番大きな哺乳類は？", a: ["ゾウ", "キリン", "クジラ", "カバ"], correct: 2, attr: "water" },
+            { q: "バレーボール。1チーム何人？）", a: ["5人", "6人", "7人", "9人"], correct: 1, attr: "fire" },
+            { q: "「桃太郎」が鬼退治に持っていった食べ物は？", a: ["おにぎり", "きびだんご", "せんべい", "あんぱん"], correct: 1, attr: "grass" },
+            { q: "虹の色は何色？（一般的）", a: ["5色", "6色", "7色", "8色"], correct: 2, attr: "water" },
+            { q: "「都道府県」は全部でいくつある？", a: ["45", "46", "47", "48"], correct: 2, attr: "grass" },
+            { q: "将棋の駒。一番数が多いのは？", a: ["歩", "香車", "桂馬", "銀将"], correct: 0, attr: "grass" },
+            { q: "一番硬い鉱物は？", a: ["金", "水晶", "サファイア", "ダイヤモンド"], correct: 3, attr: "fire" },
+            { q: "「金魚」は何科の魚？", a: ["フナ科", "コイ科", "メダカ科", "キンギョ科"], correct: 1, attr: "water" },
+            { q: "「月」の光は何の反射？", a: ["地球", "恒星", "太陽", "人工衛星"], correct: 2, attr: "fire" },
+            { q: "「すいか」は分類上どれ？", a: ["果物", "野菜", "穀物", "豆類"], correct: 1, attr: "grass" },
+            { q: "1円玉の重さは？", a: ["1g", "2g", "3g", "5g"], correct: 0, attr: "fire" },
+            { q: "「春・夏・秋・冬」を合わせて何という？", a: ["四神", "四天王", "四季", "四谷"], correct: 2, attr: "grass" },
+            { q: "エジプトにある大きなピラミッド。形は何？", a: ["円錐", "四角錐", "立方体", "三角柱"], correct: 1, attr: "fire" },
+            { q: "鳥ではないものはどれ？", a: ["ダチョウ", "ペンギン", "コウモリ", "ニワトリ"], correct: 2, attr: "grass" },
+            { q: "日本で一番高い山は？", a: ["富士山", "阿蘇山", "白山", "立山"], correct: 0, attr: "fire" },
+            { q: "英語で『水』は何？", a: ["Juice", "Milk", "Water", "Tea"], correct: 2, attr: "water" },
+            { q: "十二支。最初に来るのは？", a: ["丑", "子", "寅", "卯"], correct: 1, attr: "grass" },
+            { q: "サンタクロースが乗るそりを引く動物は？", a: ["シカ", "トナカイ", "ウマ", "イヌ"], correct: 1, attr: "grass" },
+            { q: "「さくらんぼ」の別名は？", a: ["桜桃", "桃李", "林檎", "葡萄"], correct: 0, attr: "grass" },
+            { q: "トランプのジョーカーを除く合計点数は？", a: ["360", "364", "365", "366"], correct: 1, attr: "fire" },
+            { q: "「大豆」から作られないものは？", a: ["豆腐", "納豆", "こんにゃく", "味噌"], correct: 2, attr: "grass" },
+            { q: "世界で一番高い山は？", a: ["富士山", "エベレスト", "キリマンジャロ", "モンブラン"], correct: 1, attr: "fire" },
+            { q: "日本の現在の元号は？", a: ["平成", "昭和", "令和", "明治"], correct: 2, attr: "grass" },
+            { q: "「鉛筆」の芯の主な材料は？", a: ["鉄", "黒鉛", "炭", "粘土"], correct: 1, attr: "grass" },
+            { q: "サッカーの1試合。前半と後半、各何分？", a: ["30分", "40分", "45分", "50分"], correct: 2, attr: "fire" },
+            { q: "植物が光を受けて栄養を作ることを何という？", a: ["呼吸", "蒸散", "光合成", "発芽"], correct: 2, attr: "grass" },
+            { q: "人間の心臓にある部屋の数は？", a: ["2つ", "3つ", "4つ", "5つ"], correct: 2, attr: "fire" },
+            { q: "一番足が遅い動物は？（一般的に）", a: ["カメ", "ナマケモノ", "カタツムリ", "ゾウ"], correct: 2, attr: "grass" },
+            { q: "オリンピックの開催頻度は何年に一度？", a: ["2年", "3年", "4年", "5年"], correct: 2, attr: "fire" },
+            { q: "「あいうえお」の次は？", a: ["かきくけこ", "さしすせそ", "なにぬねの", "らりるれろ"], correct: 0, attr: "grass" },
+            { q: "「日本」をローマ字で書くと？", a: ["Nipon", "Nihon", "Nippon", "どれでも正解"], correct: 3, attr: "fire" },
+            { q: "パンを作る時に膨らませるために使うのは？", a: ["イースト", "砂糖", "塩", "バター"], correct: 0, attr: "grass" },
+            { q: "「ドラえもん」の好物は？", a: ["たい焼き", "どら焼き", "おにぎり", "メロンパン"], correct: 1, attr: "grass" },
+            { q: "信号機の色。上または右端にあるのは何色？", a: ["赤", "青", "黄", "オレンジ"], correct: 0, attr: "fire" },
+            { q: "「おじいさん・おばあさん」の親を何という？", a: ["曾祖父母", "高祖父母", "伯父母", "従父母"], correct: 0, attr: "grass" },
+            { q: "日本の「国技」といえば？", a: ["柔道", "剣道", "相撲", "空手"], correct: 2, attr: "grass" },
+            { q: "一年間で一番昼が長い日は？", a: ["春分", "夏至", "秋分", "冬至"], correct: 1, attr: "fire" },
+            { q: "一番重い惑星は？（太陽系内）", a: ["地球", "木星", "土星", "海王星"], correct: 1, attr: "fire" },
+            { q: "「ハチミツ」を作る昆虫は？", a: ["チョウ", "アリ", "ミツバチ", "アブ"], correct: 2, attr: "grass" },
+            { q: "バイオリンの弦は何本？", a: ["3本", "4本", "5本", "6本"], correct: 1, attr: "fire" },
+            { q: "日本で一番広い都道府県は？", a: ["北海道", "岩手県", "長野県", "静岡県"], correct: 0, attr: "water" },
+            { q: "このクイズゲーム、最後のボスは？", a: ["スライム", "ドラゴン", "大賢者", "クイズ王"], correct: 2, attr: "grass" }
+        ];
+        const ENEMIES = [
+            { name: "スライム", hp: 30, atk: 5, exp: 5, emoji: "💧", element: "water" },
+            { name: "火の精霊", hp: 45, atk: 8, exp: 10, emoji: "🔥", element: "fire" },
+            { name: "木のゴーレム", hp: 60, atk: 12, exp: 15, emoji: "🌲", element: "grass" },
+            { name: "スケルトン", hp: 80, atk: 15, exp: 20, emoji: "💀", element: "water" },
+            { name: "レッドドラゴン", hp: 150, atk: 25, exp: 50, emoji: "🐉", element: "fire" },
+            { name: "大賢者", hp: 300, atk: 40, exp: 100, emoji: "🧙‍♂️", element: "grass" }
+        ];
+        let player = { lv: 1, hp: 100, maxHp: 100, atk: 10, exp: 0, nextExp: 10 };
+        let currentEnemy = null;
+        let currentStage = 0;
+        let isProcessing = false;
+        const elPlayerHpBar = document.getElementById('player-hp-bar');
+        const elPlayerHpText = document.getElementById('player-hp-text');
+        const elPlayerExpBar = document.getElementById('player-exp-bar');
+        const elPlayerExpText = document.getElementById('player-exp-text');
+        const elPlayerLv = document.getElementById('player-lv');
+        const elEnemyHpBar = document.getElementById('enemy-hp-bar');
+        const elEnemySprite = document.getElementById('enemy-sprite');
+        const elEnemyName = document.getElementById('enemy-name');
+        const elMsg = document.getElementById('message-box');
+        const elQuestion = document.getElementById('question-text');
+        const elOptions = document.getElementById('options-grid').children;
+        const elStage = document.getElementById('current-stage');
+        const elFlash = document.getElementById('flash-overlay');
+        const elOverlay = document.getElementById('overlay');
+        function initStage() {
+            currentEnemy = { ...ENEMIES[Math.min(currentStage, ENEMIES.length - 1)] };
+            const multiplier = 1 + (currentStage * 0.3);
+            currentEnemy.maxHp = Math.floor(currentEnemy.hp * multiplier);
+            currentEnemy.hp = currentEnemy.maxHp;
+            currentEnemy.atk = Math.floor(currentEnemy.atk * multiplier);
+            elEnemySprite.innerText = currentEnemy.emoji;
+            elEnemyName.innerText = `${currentEnemy.name} (${getElementName(currentEnemy.element)})`;
+            elStage.innerText = currentStage + 1;
+            updateHPRender();
+            updateMessage(`${currentEnemy.name}があらわれた！`);
+            nextQuestion();
+        }
+        function getElementName(code) {
+            switch(code) {
+                case 'fire': return '火';
+                case 'water': return '水';
+                case 'grass': return '木';
+                default: return '無';
+            }
+        }
+        function updateMessage(txt) {
+            elMsg.innerText = txt;
+            elMsg.scrollTop = elMsg.scrollHeight;
+        }
+        function nextQuestion() {
+            const quiz = QUIZ_DATABASE[Math.floor(Math.random() * QUIZ_DATABASE.length)];
+            elQuestion.innerText = `[${getElementName(quiz.attr)}属性の問題]\n${quiz.q}`;
+            elQuestion.dataset.correct = quiz.correct;
+            elQuestion.dataset.attr = quiz.attr;
+            for (let i = 0; i < 4; i++) {
+                elOptions[i].innerText = quiz.a[i];
+                elOptions[i].disabled = false;
+                elOptions[i].className = "btn-pixel p-3 text-sm rounded bg-zinc-700";
+            }
+            isProcessing = false;
+        }
+        async function handleAnswer(index) {
+            if (isProcessing) return;
+            isProcessing = true;
+            const correctIdx = parseInt(elQuestion.dataset.correct);
+            const questionAttr = elQuestion.dataset.attr;
+            
+            for (let btn of elOptions) btn.disabled = true;
+            if (index === correctIdx) {
+                elOptions[index].classList.add('bg-green-600');
+                updateMessage("正解！ ダメージを与えた！");
+                
+                let damage = player.atk;
+                const multiplier = getAffinity(questionAttr, currentEnemy.element);
+                damage = Math.floor(damage * multiplier);
+                if (multiplier > 1) updateMessage("属性相性抜群！");
+                if (multiplier < 1) updateMessage("属性相性が悪い...");
+                await performAttack(elEnemySprite, damage, 'enemy');
+                
+                if (currentEnemy.hp <= 0) {
+                    await handleEnemyDefeat();
+                    return;
+                }
+            } else {
+                elOptions[index].classList.add('bg-red-600');
+                elOptions[correctIdx].classList.add('bg-green-600');
+                updateMessage(`不正解！ 正解は「${elOptions[correctIdx].innerText}」だ！`);
+                
+                await performAttack(document.getElementById('game-container'), currentEnemy.atk, 'player');
+                if (player.hp <= 0) {
+                    showOverlay("GAME OVER", "勇者の伝説はここで途絶えた...");
+                    return;
+                }
+            }
+            setTimeout(nextQuestion, 1200);
+        }
+        function getAffinity(atkType, defType) {
+            if (atkType === 'fire' && defType === 'grass') return 1.5;
+            if (atkType === 'grass' && defType === 'water') return 1.5;
+            if (atkType === 'water' && defType === 'fire') return 1.5;
+            if (atkType === 'fire' && defType === 'water') return 0.5;
+            if (atkType === 'water' && defType === 'grass') return 0.5;
+            if (atkType === 'grass' && defType === 'fire') return 0.5;
+            return 1.0;
+        }
+        async function performAttack(target, damage, targetType) {
+            target.classList.add('animate-shake');
+            if (targetType === 'enemy') {
+                currentEnemy.hp = Math.max(0, currentEnemy.hp - damage);
+            } else {
+                player.hp = Math.max(0, player.hp - damage);
+                elFlash.className = "screen-flash damage-red";
+                setTimeout(() => elFlash.className = "screen-flash", 300);
+            }
+            updateHPRender();
+            return new Promise(resolve => setTimeout(() => {
+                target.classList.remove('animate-shake');
+                resolve();
+            }, 500));
+        }
+        function updateHPRender() {
+            const pPercent = (player.hp / player.maxHp) * 100;
+            elPlayerHpBar.style.width = `${pPercent}%`;
+            elPlayerHpText.innerText = `${player.hp}/${player.maxHp}`;
+            elPlayerHpBar.className = pPercent < 25 ? "hp-bar-inner h-full bg-red-600" : (pPercent < 50 ? "hp-bar-inner h-full bg-yellow-500" : "hp-bar-inner h-full bg-green-500");
+            const ePercent = (currentEnemy.hp / currentEnemy.maxHp) * 100;
+            elEnemyHpBar.style.width = `${ePercent}%`;
+            const expPercent = (player.exp / player.nextExp) * 100;
+            elPlayerExpBar.style.width = `${expPercent}%`;
+            elPlayerExpText.innerText = `${player.exp}/${player.nextExp}`;
+        }
+        async function handleEnemyDefeat() {
+            updateMessage(`${currentEnemy.name}を完全に沈めた！`);
+            player.exp += currentEnemy.exp;
+            await new Promise(r => setTimeout(r, 1000));
+            if (player.exp >= player.nextExp) {
+                player.lv++;
+                player.exp -= player.nextExp;
+                player.nextExp = Math.floor(player.nextExp * 1.6);
+                player.maxHp += 30;
+                player.hp = player.maxHp;
+                player.atk += 8;
+                elPlayerLv.innerText = player.lv;
+                updateMessage(`レベルアップ！ 最大HPと攻撃力が大幅に上昇！`);
+                elFlash.className = "screen-flash heal-green";
+                setTimeout(() => elFlash.className = "screen-flash", 300);
+                await new Promise(r => setTimeout(r, 1200));
+            }
+            currentStage++;
+            if (currentStage >= ENEMIES.length + 4) { 
+                showOverlay("QUIZ MASTER", "全てのモンスターを討伐し、伝説となった！");
+            } else {
+                initStage();
+            }
+        }
+        function showOverlay(title, desc) {
+            document.getElementById('overlay-title').innerText = title;
+            document.getElementById('overlay-desc').innerText = desc;
+            elOverlay.classList.remove('hidden');
+            elOverlay.classList.add('flex');
+        }
+        function resetGame() {
+            player = { lv: 1, hp: 100, maxHp: 100, atk: 10, exp: 0, nextExp: 10 };
+            currentStage = 0;
+            elPlayerLv.innerText = player.lv;
+            elOverlay.classList.add('hidden');
+            elOverlay.classList.remove('flex');
+            initStage();
+        }
+        window.onload = initStage;
+    </script>
+</body>
+</html>
